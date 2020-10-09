@@ -1,5 +1,6 @@
 const P = require('bluebird');
 const fs = require('fs');
+const os = require('os');
 const _ = require('lodash');
 const mkdirpSync = require('mkdirp');
 const Handlebars = require('handlebars');
@@ -9,12 +10,22 @@ const Sequelize = require('sequelize');
 const stringUtils = require('../utils/strings');
 const logger = require('./logger');
 const toValidPackageName = require('../utils/to-valid-package-name');
-const { tableToFilename } = require('../utils/dumper-utils');
 require('../handlerbars/loader');
 
 const mkdirp = P.promisify(mkdirpSync);
 
 const DEFAULT_PORT = 3310;
+
+const DEFAULT_VALUE_TYPES_TO_STRINGIFY = [
+  `${Sequelize.DataTypes.ARRAY}`,
+  `${Sequelize.DataTypes.CITEXT}`,
+  `${Sequelize.DataTypes.DATE}`,
+  `${Sequelize.DataTypes.ENUM}`,
+  `${Sequelize.DataTypes.JSONB}`,
+  `${Sequelize.DataTypes.STRING}`,
+  `${Sequelize.DataTypes.TEXT}`,
+  `${Sequelize.DataTypes.UUID}`,
+];
 
 function Dumper(config) {
   const path = `${process.cwd()}/${config.appName}`;
@@ -24,6 +35,10 @@ function Dumper(config) {
   const viewPath = `${path}/views`;
   const modelsPath = `${path}/models`;
   const middlewaresPath = `${path}/middlewares`;
+
+  function isLinuxBasedOs() {
+    return os.platform() === 'linux';
+  }
 
   function writeFile(filePath, content, type = 'create') {
     fs.writeFileSync(filePath, content);
@@ -56,6 +71,7 @@ function Dumper(config) {
   function writePackageJson() {
     const orm = config.dbDialect === 'mongodb' ? 'mongoose' : 'sequelize';
     const dependencies = {
+      'body-parser': '1.19.0',
       chalk: '~1.1.3',
       'cookie-parser': '1.4.4',
       cors: '2.8.5',
@@ -63,7 +79,8 @@ function Dumper(config) {
       dotenv: '~6.1.0',
       express: '~4.16.3',
       'express-jwt': '5.3.1',
-      [`forest-express-${orm}`]: '^5.5.0',
+      'forest-express': '^7.4.0',
+      [`forest-express-${orm}`]: '^6.0.0',
       morgan: '1.9.1',
       'require-all': '^3.0.0',
       sequelize: '~5.15.1',
@@ -71,7 +88,7 @@ function Dumper(config) {
 
     if (config.dbDialect) {
       if (config.dbDialect.includes('postgres')) {
-        dependencies.pg = '~6.1.0';
+        dependencies.pg = '~8.2.2';
       } else if (config.dbDialect === 'mysql') {
         dependencies.mysql2 = '~1.7.0';
       } else if (config.dbDialect === 'mssql') {
@@ -91,6 +108,10 @@ function Dumper(config) {
     };
 
     writeFile(`${path}/package.json`, `${JSON.stringify(pkg, null, 2)}\n`);
+  }
+
+  function tableToFilename(table) {
+    return _.kebabCase(table);
   }
 
   function getDatabaseUrl() {
@@ -117,6 +138,11 @@ function Dumper(config) {
     }
 
     return connectionString;
+  }
+
+  function isDatabaseLocal() {
+    const databaseUrl = getDatabaseUrl();
+    return databaseUrl.includes('127.0.0.1') || databaseUrl.includes('localhost');
   }
 
   function writeDotEnv() {
@@ -203,9 +229,11 @@ function Dumper(config) {
         ? _.snakeCase(reference.targetKey) : _.camelCase(reference.targetKey);
       return reference.targetKey !== expectedConventionalTargetKeyName;
     };
-
-    const referencesDefinition = references.map((reference) =>
-      getReferenceWithMetaData(reference, isTargetKeyColumnUnconventional));
+    const referencesDefinition = references.map((reference) => ({
+      ...reference,
+      isBelongsToMany: reference.association === 'belongsToMany',
+      targetKey: _.camelCase(reference.targetKey),
+    }));
 
     copyHandleBarsTemplate({
       source: `app/models/${config.dbDialect === 'mongodb' ? 'mongo' : 'sequelize'}-model.hbs`,
@@ -294,12 +322,13 @@ function Dumper(config) {
         containerName: _.snakeCase(config.appName),
         hostname: config.appHostname || 'http://localhost',
         port: config.appPort || DEFAULT_PORT,
-        databaseUrl: getDatabaseUrl().replace('localhost', 'host.docker.internal'),
+        databaseUrl: isLinuxBasedOs() ? getDatabaseUrl() : getDatabaseUrl().replace('localhost', 'host.docker.internal'),
         ssl: config.ssl || 'false',
         dbSchema: config.dbSchema,
         forestEnvSecret: config.forestEnvSecret,
         forestAuthSecret: config.forestAuthSecret,
         forestUrl: process.env.FOREST_URL,
+        network: (isLinuxBasedOs() && isDatabaseLocal()) ? 'host' : null,
       },
     });
   }
@@ -468,7 +497,12 @@ automatically. Please, remove it manually from the file '${tableFileName}'`));
     copyTemplate('public/favicon.png', `${path}/public/favicon.png`);
 
     modelNames.forEach((modelName) => {
-      writeRouteIfPossible(modelName);
+      // HACK: If a table name is "sessions" the generated routes will conflict with Forest Admin
+      //       internal session creation route. As a workaround, we don't generate the route file.
+      // TODO: Remove the if condition, once the routes paths refactored to prevent such conflict.
+      if (modelName !== 'sessions') {
+        writeRoute(modelName);
+      }
     });
 
     copyTemplate('views/index.hbs', `${path}/views/index.html`);
