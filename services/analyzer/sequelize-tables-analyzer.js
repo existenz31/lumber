@@ -340,7 +340,9 @@ async function createTableSchema({
         defaultValue,
         isRequired,
       };
-
+      if (columnInfo.primaryKey && columnInfo.autoIncrement) {
+        field.autoIncrement= true;
+      }
       fields.push(field);
     }
   });
