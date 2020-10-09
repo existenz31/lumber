@@ -11,6 +11,7 @@ module.exports = {
   env: {
     mocha: true,
   },
+  ignorePatterns: ["test-expected"],
   rules: {
     'implicit-arrow-linebreak': 0,
     'no-underscore-dangle': [
@@ -22,7 +23,6 @@ module.exports = {
       {
         devDependencies: [
           '.eslint-bin/*.js',
-          'scripts/*.js',
           'test/**/*.js'
         ]
       }

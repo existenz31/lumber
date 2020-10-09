@@ -1,17 +1,176 @@
-# Change Log
+## [3.7.2](https://github.com/ForestAdmin/lumber/compare/v3.7.1...v3.7.2) (2020-09-24)
 
-## [Unreleased]
+
+### Bug Fixes
+
+* fix rejectUnauthorized handling ([#474](https://github.com/ForestAdmin/lumber/issues/474)) ([9e91eb2](https://github.com/ForestAdmin/lumber/commit/9e91eb277b47ad9572360ab263b2e983b89480b0))
+
+## [3.7.1](https://github.com/ForestAdmin/lumber/compare/v3.7.0...v3.7.1) (2020-09-23)
+
+
+### Bug Fixes
+
+* **generate:** fix association alias duplication ([#473](https://github.com/ForestAdmin/lumber/issues/473)) ([81766b8](https://github.com/ForestAdmin/lumber/commit/81766b8cd2a5c1b1bbc93e4bcd60b8d7902816aa))
+
+# [3.7.0](https://github.com/ForestAdmin/lumber/compare/v3.6.11...v3.7.0) (2020-09-21)
+
+
+### Features
+
+* trust SSL certificate by default to ease users onboarding ([#472](https://github.com/ForestAdmin/lumber/issues/472)) ([2cf7e6b](https://github.com/ForestAdmin/lumber/commit/2cf7e6bcbe40e762fabf2f038e4e1188c509887f))
+
+## [3.6.11](https://github.com/ForestAdmin/lumber/compare/v3.6.10...v3.6.11) (2020-09-17)
+
+
+### Bug Fixes
+
+* **models:** enforce string type for default value when 'NULL' ([#470](https://github.com/ForestAdmin/lumber/issues/470)) ([ae11674](https://github.com/ForestAdmin/lumber/commit/ae116742cc0d8c9c248240d4023acae585a0e2c3))
+
+## [3.6.10](https://github.com/ForestAdmin/lumber/compare/v3.6.9...v3.6.10) (2020-09-16)
+
+
+### Bug Fixes
+
+* **models:** add missing association aliases ([#469](https://github.com/ForestAdmin/lumber/issues/469)) ([3114f84](https://github.com/ForestAdmin/lumber/commit/3114f845e70f987adf44574b3eb32fa97023f3f8))
+
+## [3.6.9](https://github.com/ForestAdmin/lumber/compare/v3.6.8...v3.6.9) (2020-09-11)
+
+
+### Bug Fixes
+
+* **generate:** handle NOT NULL constraint ([#466](https://github.com/ForestAdmin/lumber/issues/466)) ([faace37](https://github.com/ForestAdmin/lumber/commit/faace37b023a2d0450389303f2a086cd5c544ef6))
+
+## [3.6.8](https://github.com/ForestAdmin/lumber/compare/v3.6.7...v3.6.8) (2020-08-14)
+
+
+### Bug Fixes
+
+* postgres 12.2 support ([#461](https://github.com/ForestAdmin/lumber/issues/461)) ([8c905b2](https://github.com/ForestAdmin/lumber/commit/8c905b22a84cc3f648c3e9d49936810ae5a3f4ec))
+
+## [3.6.7](https://github.com/ForestAdmin/lumber/compare/v3.6.6...v3.6.7) (2020-08-11)
+
+
+### Bug Fixes
+
+* **vulnerability:** remove potential vulnerability upgrading lodash dependency version ([#453](https://github.com/ForestAdmin/lumber/issues/453)) ([92d165c](https://github.com/ForestAdmin/lumber/commit/92d165c85619c04228b84174cb5b18b23f6bba95))
+
+## [3.6.6](https://github.com/ForestAdmin/lumber/compare/v3.6.5...v3.6.6) (2020-08-03)
+
+
+### Bug Fixes
+
+* suggest to reach help in the discourse community instead of Slack ([#456](https://github.com/ForestAdmin/lumber/issues/456)) ([1bbba8c](https://github.com/ForestAdmin/lumber/commit/1bbba8c5aa4bfccde5a2be76f9824cc1b1816dc3))
+
+## [3.6.5](https://github.com/ForestAdmin/lumber/compare/v3.6.4...v3.6.5) (2020-07-30)
+
+
+### Bug Fixes
+
+* :bug: generate agents that return JSON errors ([#455](https://github.com/ForestAdmin/lumber/issues/455)) ([79ae6e6](https://github.com/ForestAdmin/lumber/commit/79ae6e676dfbd6e146d71c10f3ddc0e143dafbe0))
+
+## [3.6.4](https://github.com/ForestAdmin/lumber/compare/v3.6.3...v3.6.4) (2020-07-13)
+
+
+### Bug Fixes
+
+* **vulnerabilities:** bump 2 dependencies of dependencies ([#451](https://github.com/ForestAdmin/lumber/issues/451)) ([a81298a](https://github.com/ForestAdmin/lumber/commit/a81298ae0dce3be7dabac7e36cb33fb8147b3152))
+
+## [3.6.3](https://github.com/ForestAdmin/lumber/compare/v3.6.2...v3.6.3) (2020-07-13)
+
+
+### Bug Fixes
+
+* **dumper:** fix issue where project using nodejs v14 could never connect to postgres database ([#450](https://github.com/ForestAdmin/lumber/issues/450)) ([954ad30](https://github.com/ForestAdmin/lumber/commit/954ad30fe04ecd0b3f55cbcccadc9f16b83026ac))
+
+## [3.6.2](https://github.com/ForestAdmin/lumber/compare/v3.6.1...v3.6.2) (2020-07-08)
+
+
+### Bug Fixes
+
+* model generation inconsistencies ([#445](https://github.com/ForestAdmin/lumber/issues/445)) ([7df5fbe](https://github.com/ForestAdmin/lumber/commit/7df5fbe6e6fb008b5521ceba6762ba9600400c39))
+
+## [3.6.1](https://github.com/ForestAdmin/lumber/compare/v3.6.0...v3.6.1) (2020-07-07)
+
+
+### Bug Fixes
+
+* **command generate:** fix generation of project with postgres on node 14.4 ([#446](https://github.com/ForestAdmin/lumber/issues/446)) ([9a307b3](https://github.com/ForestAdmin/lumber/commit/9a307b3bf1b532f19a2f06d5cdf2abd6921b01e6))
+
+# [3.6.0](https://github.com/ForestAdmin/lumber/compare/v3.5.6...v3.6.0) (2020-05-25)
+
+
+### Features
+
+* **command-generate:** support 'JSON' field type on installation ([8cf952c](https://github.com/ForestAdmin/lumber/commit/8cf952cb4316a0d48667410bd318351c98419343))
+
+## [3.5.6](https://github.com/ForestAdmin/lumber/compare/v3.5.5...v3.5.6) (2020-05-15)
+
+
+### Bug Fixes
+
+* **command generate:** fix an error on mssql database analysis with case sensitive collation ([#432](https://github.com/ForestAdmin/lumber/issues/432)) ([6520ab1](https://github.com/ForestAdmin/lumber/commit/6520ab1687883f8bd9bd9f2e55917c9d8f6d952c))
+
+## [3.5.5](https://github.com/ForestAdmin/lumber/compare/v3.5.4...v3.5.5) (2020-05-12)
+
+
+### Bug Fixes
+
+* **generate:** default configuration now works for users using Linux and a local database ([#429](https://github.com/ForestAdmin/lumber/issues/429)) ([176ebcf](https://github.com/ForestAdmin/lumber/commit/176ebcfceaa54e5c7a6a4def168b16bcea39cb9c))
+
+## [3.5.4](https://github.com/ForestAdmin/lumber/compare/v3.5.3...v3.5.4) (2020-05-11)
+
+
+### Bug Fixes
+
+* **security:** patch newly detected vulnerabilities ([#431](https://github.com/ForestAdmin/lumber/issues/431)) ([724a6a9](https://github.com/ForestAdmin/lumber/commit/724a6a9709059b65023c0453d59218595c17ee5d))
+
+## RELEASE 3.5.3 - 2020-05-11
+### Changed
+- Technical - Add a Pull Requests template.
+- Technical - Remove CI configuration warnings.
+- Technical - Remove useless CI webhook.
+- Technical - Move `to-valid-package-name` test to correct folder.
+- Readme - Update the community badge for Discourse.
+
+## RELEASE 3.5.2 - 2020-04-29
+### Changed
+- Technical - Introduce conventional commits.
+- Technical - Make the CI lint the commit messages.
+- Technical - Adapt release manager to conventional commits.
+- Documentation - Update links in readme.
+
+### Fixed
+- Command Generate - Prevent files' content from being HTML escaped.
+
+## RELEASE 3.5.1 - 2020-04-06
+### Fixed
+- Command Generate - Remove extraneous calls to Sequelize.literal in generated models.
+- Command Generate - Fix issue where a conflict between regular fields and references alias could prevent the server from starting. 🛡
+
+## RELEASE 3.5.0 - 2020-03-25
+### Changed
+- Technical - Remove 5 unused dependencies (`expand-home-dir`, `import-from`, `jsonwebtoken`, `minimist`, `winston`).
+
+### Fixed
+- Documentation - Update documentation links to v6.
+- Technical - Do not lint `test-expected` files.
+- Command Generate - Prevent error when table name is a JS reserved word.
+
+## RELEASE 3.4.0 - 2020-03-23
 ### Added
 - Command Generate - Add support for MySQL 8.
-- Command Update - New update command to insert new tables/fields/relationships.
+- Initialisation - Allow asynchronous middlewares (ie. Liana.init).
+- Command Generate - Add "delete a list of …" in generated route file.
 
 ### Changed
 - Tests - Use MySQL 8.0 as the max supported MySQL version.
+- Technical - Set the latest `forest-express` dependencies version (6.0) while generating a project.
 
 ### Fixed
 - Command Generate - Fix error on project generation with database contain table with number as name.
 - Command Generate - Fix allowed origin to only allow forestadmin domain and not domain finishing by forestadmin.
 - Command Generate - Fix error on project generation when tables have references on table with non safe name.
+- Security - Upgrade `acorn` dependencies to patch vulnerabilities.
 
 ## RELEASE 3.3.3 - 2020-01-23
 ### Changed

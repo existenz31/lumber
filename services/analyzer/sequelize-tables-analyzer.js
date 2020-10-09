@@ -1,10 +1,12 @@
 const P = require('bluebird');
 const _ = require('lodash');
 const { plural, singular } = require('pluralize');
+const Sequelize = require('sequelize');
 const ColumnTypeGetter = require('./sequelize-column-type-getter');
 const TableConstraintsGetter = require('./sequelize-table-constraints-getter');
 const { DatabaseAnalyzerError } = require('../../utils/errors');
 const { terminate } = require('../../utils/terminator');
+const stringUtils = require('../../utils/strings');
 
 const ASSOCIATION_TYPE_BELONGS_TO = 'belongsTo';
 const ASSOCIATION_TYPE_BELONGS_TO_MANY = 'belongsToMany';
@@ -47,7 +49,7 @@ async function showAllTables(databaseConnection, schema) {
   }
 
   return queryInterface.sequelize.query(
-    'SELECT table_name as table_name FROM information_schema.tables WHERE table_schema = ? AND table_type LIKE \'%TABLE\' AND table_name != \'spatial_ref_sys\'',
+    'SELECT table_name as table_name FROM INFORMATION_SCHEMA.TABLES WHERE table_schema = ? AND table_type LIKE \'%TABLE\' AND table_name != \'spatial_ref_sys\'',
     { type: queryInterface.sequelize.QueryTypes.SELECT, replacements: [realSchema] },
   )
     .then((results) => results.map((table) => table.table_name));
@@ -87,7 +89,7 @@ function hasIdColumn(fields, primaryKeys) {
     || _.includes(primaryKeys, 'id');
 }
 
-function isJunctionTable(fields, constraints) {
+function isTechnicalTimestamp({ type, name }) {
   // NOTICE: Ignore technical timestamp fields.
   const FIELDS_TO_IGNORE = [
     'createdAt', 'updatedAt', 'deletedAt',
@@ -95,12 +97,15 @@ function isJunctionTable(fields, constraints) {
     'creationDate', 'deletionDate',
   ];
 
+  return type === 'DATE' && FIELDS_TO_IGNORE.includes(name);
+}
+
+function isJunctionTable(fields, constraints) {
   for (let index = 0; index < fields.length; index += 1) {
     const field = fields[index];
 
-    const isTechnicalTimestamp = field.type === 'DATE' && FIELDS_TO_IGNORE.includes(field.name);
     // NOTICE: The only fields accepted are primary keys, technical timestamps and foreignKeys
-    if (!isTechnicalTimestamp && !field.primaryKey) {
+    if (!isTechnicalTimestamp(field) && !field.primaryKey) {
       return false;
     }
   }
@@ -119,11 +124,31 @@ function checkUnicity(primaryKeys, uniqueIndexes, columnName) {
       indexColumnName.length === 1 && indexColumnName.includes(columnName));
 
   const isPrimary = _.isEqual([columnName], primaryKeys);
-  return { isPrimary, isUnique };
+
+  return isPrimary || isUnique;
+}
+
+function associationNameAlreadyExists(existingReferences, newReference) {
+  return existingReferences.some((reference) => reference && reference.as === newReference.as);
+}
+
+function referenceAlreadyExists(existingReferences, newReference) {
+  return existingReferences.some((reference) => (
+    reference
+    && reference.ref === newReference.ref
+    && reference.association === newReference.association
+    && reference.foreignKey === newReference.foreignKey
+  ));
 }
 
 // NOTICE: Format the references depending on the type of the association
-function createReference(tableName, association, foreignKey, manyToManyForeignKey) {
+function createReference(
+  tableName,
+  existingsReferences,
+  association,
+  foreignKey,
+  manyToManyForeignKey,
+) {
   const foreignKeyName = _.camelCase(foreignKey.columnName);
   const reference = {
     foreignKey: foreignKey.columnName,
@@ -134,10 +159,16 @@ function createReference(tableName, association, foreignKey, manyToManyForeignKe
   if (association === ASSOCIATION_TYPE_BELONGS_TO) {
     reference.ref = foreignKey.foreignTableName;
     reference.as = formatAliasName(foreignKey.columnName);
+    if (foreignKey.foreignColumnName !== 'id') {
+      reference.targetKey = foreignKey.foreignColumnName;
+    }
   } else if (association === ASSOCIATION_TYPE_BELONGS_TO_MANY) {
     reference.ref = manyToManyForeignKey.foreignTableName;
     reference.otherKey = manyToManyForeignKey.columnName;
-    reference.junctionTable = foreignKey.tableName;
+    reference.through = stringUtils.camelCase(
+      stringUtils.transformToSafeString(foreignKey.tableName),
+    );
+    reference.as = _.camelCase(plural(`${manyToManyForeignKey.foreignTableName}_through_${foreignKey.tableName}`));
   } else {
     reference.ref = foreignKey.tableName;
 
@@ -149,8 +180,10 @@ function createReference(tableName, association, foreignKey, manyToManyForeignKe
     reference.as = _.camelCase(formater(`${prefix}${foreignKey.tableName}`));
   }
 
-  if (foreignKey.foreignColumnName !== 'id') {
-    reference.targetKey = foreignKey.foreignColumnName;
+  if (referenceAlreadyExists(existingsReferences, reference)) return null;
+
+  if (associationNameAlreadyExists(existingsReferences, reference)) {
+    reference.as = _.camelCase(`${reference.as} ${reference.foreignKey}`);
   }
 
   return reference;
@@ -164,6 +197,31 @@ async function analyzeTable(table, config) {
     constraints: await tableConstraintsGetter.perform(table),
     primaryKeys: await analyzePrimaryKeys(schema),
   };
+}
+
+function createBelongsToReference(referenceTable, tableReferences, constraint) {
+  const referenceColumnName = constraint.foreignColumnName;
+  const referencePrimaryKeys = referenceTable.primaryKeys;
+  const referenceUniqueConstraint = referenceTable.constraints
+    .find(({ columnType }) => columnType === 'UNIQUE');
+  const referenceUniqueIndexes = referenceUniqueConstraint
+    ? referenceUniqueConstraint.uniqueIndexes
+    : null;
+  const isReferencePrimaryOrUnique = checkUnicity(
+    referencePrimaryKeys,
+    referenceUniqueIndexes,
+    referenceColumnName,
+  );
+
+  if (isReferencePrimaryOrUnique) {
+    return createReference(
+      null,
+      tableReferences,
+      ASSOCIATION_TYPE_BELONGS_TO,
+      constraint,
+    );
+  }
+  return null;
 }
 
 // NOTICE: Use the foreign key and reference properties to determine the associations
@@ -185,19 +243,19 @@ function createAllReferences(databaseSchema, schemaGenerated) {
       const { columnName } = constraint;
       const uniqueIndexes = constraint.uniqueIndexes || null;
 
-      const { isPrimary, isUnique } = checkUnicity(primaryKeys, uniqueIndexes, columnName);
+      const isPrimaryOrUnique = checkUnicity(primaryKeys, uniqueIndexes, columnName);
 
       const referenceTableName = constraint.foreignTableName;
-      const referenceColumnName = constraint.foreignColumnName;
 
       if (isJunction) {
-        const manyToManyKeys = _.filter(foreignKeysWithExistingTable,
-          (otherKey) => otherKey.columnName !== constraint.columnName);
+        const manyToManyKeys = foreignKeysWithExistingTable
+          .filter((otherKey) => otherKey.columnName !== constraint.columnName);
 
         manyToManyKeys.forEach((manyToManyKey) => {
           references[referenceTableName].push(
             createReference(
               referenceTableName,
+              references[referenceTableName],
               ASSOCIATION_TYPE_BELONGS_TO_MANY,
               constraint,
               manyToManyKey,
@@ -208,37 +266,32 @@ function createAllReferences(databaseSchema, schemaGenerated) {
         references[referenceTableName].push(
           createReference(
             referenceTableName,
-            (isPrimary || isUnique) ? ASSOCIATION_TYPE_HAS_ONE : ASSOCIATION_TYPE_HAS_MANY,
+            references[referenceTableName],
+            isPrimaryOrUnique ? ASSOCIATION_TYPE_HAS_ONE : ASSOCIATION_TYPE_HAS_MANY,
             constraint,
           ),
         );
       }
 
-      const referencePrimaryKeys = databaseSchema[referenceTableName].primaryKeys;
-      const referenceUniqueConstraint = databaseSchema[referenceTableName].constraints
-        .find(({ columnType }) => columnType === 'UNIQUE');
-      const referenceUniqueIndexes = referenceUniqueConstraint
-        ? referenceUniqueConstraint.uniqueIndexes
-        : null;
-      const referenceUnicity = checkUnicity(
-        referencePrimaryKeys,
-        referenceUniqueIndexes,
-        referenceColumnName,
+      references[tableName].push(
+        createBelongsToReference(
+          databaseSchema[referenceTableName],
+          references[tableName],
+          constraint,
+        ),
       );
-
-      if (referenceUnicity.isPrimary || referenceUnicity.isUnique) {
-        references[tableName].push(
-          createReference(
-            null,
-            ASSOCIATION_TYPE_BELONGS_TO,
-            constraint,
-          ),
-        );
-      }
     });
   });
 
-  return references;
+  // remove null references
+  return Object.entries(references)
+    .reduce(
+      (accumulator, [tableName, tableReferences]) => {
+        accumulator[tableName] = tableReferences.filter(Boolean);
+        return accumulator;
+      },
+      {},
+    );
 }
 
 async function createTableSchema({
@@ -267,17 +320,25 @@ async function createTableSchema({
 
       if (["b'1'", '((1))'].includes(defaultValue)) {
         defaultValue = true;
-      }
-      if (["b'0'", '((0))'].includes(defaultValue)) {
+      } else if (["b'0'", '((0))'].includes(defaultValue)) {
         defaultValue = false;
+      } else if (typeof defaultValue === 'string' && defaultValue.endsWith(')')) {
+        defaultValue = Sequelize.literal(defaultValue);
+      }
+
+      const name = _.camelCase(columnName);
+      let isRequired = !columnInfo.allowNull;
+      if (isTechnicalTimestamp({ name, type })) {
+        isRequired = false;
       }
 
       const field = {
-        name: _.camelCase(columnName),
+        name,
         nameColumn: columnName,
         type,
         primaryKey: columnInfo.primaryKey,
         defaultValue,
+        isRequired,
       };
 
       fields.push(field);
@@ -297,6 +358,29 @@ async function createTableSchema({
     primaryKeys,
     options,
   };
+}
+
+// NOTICE: This detects two generated fields (regular or reference's alias) with the same name
+//         and rename reference's alias as `Linked${collectionReferenced}` to prevent Sequelize
+//         from crashing at startup.
+function fixAliasConflicts(wholeSchema) {
+  const tablesName = Object.keys(wholeSchema);
+
+  if (!tablesName.length) { return; }
+
+  tablesName.forEach((tableName) => {
+    const table = wholeSchema[tableName];
+
+    if (table.references.length && table.fields.length) {
+      const fieldNames = table.fields.map((field) => field.name);
+
+      table.references.forEach((reference, index) => {
+        if (fieldNames.includes(reference.as)) {
+          table.references[index].as = `linked${_.upperFirst(reference.as)}`;
+        }
+      });
+    }
+  });
 }
 
 async function analyzeSequelizeTables(databaseConnection, config, allowWarning) {
@@ -346,6 +430,15 @@ async function analyzeSequelizeTables(databaseConnection, config, allowWarning) 
   const referencesPerTable = createAllReferences(databaseSchema, schemaAllTables);
   Object.keys(referencesPerTable).forEach((tableName) => {
     schemaAllTables[tableName].references = _.sortBy(referencesPerTable[tableName], 'association');
+
+    // NOTE: When a table contains no field, it will be considered camelCased
+    //       by default, so we need to check its references to ensure whether
+    //       it is camelCased or not.
+    if (!schemaAllTables[tableName].fields.length) {
+      schemaAllTables[tableName].options.underscored = isUnderscored(
+        schemaAllTables[tableName].references.map(({ foreignKey }) => ({ nameColumn: foreignKey })),
+      );
+    }
   });
 
   if (_.isEmpty(schemaAllTables)) {
@@ -354,6 +447,8 @@ async function analyzeSequelizeTables(databaseConnection, config, allowWarning) 
       dialect: databaseConnection.getDialect(),
     });
   }
+
+  fixAliasConflicts(schemaAllTables);
 
   return schemaAllTables;
 }

@@ -4,6 +4,10 @@ const logger = require('../logger');
 const DIALECT_MYSQL = 'mysql';
 const DIALECT_POSTGRES = 'postgres';
 
+const typeMatch = (type, value) => (type.match(value) || {}).input;
+const typeStartsWith = (type, value) => typeMatch(type, new RegExp(`^${value}.*`, 'i'));
+const typeContains = (type, value) => typeMatch(type, new RegExp(`${value}.*`, 'i'));
+
 function ColumnTypeGetter(databaseConnection, schema, allowWarning = true) {
   const queryInterface = databaseConnection.getQueryInterface();
 
@@ -18,7 +22,7 @@ function ColumnTypeGetter(databaseConnection, schema, allowWarning = true) {
       FROM pg_catalog.pg_type t
       JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
       JOIN pg_catalog.pg_enum e ON t.oid = e.enumtypid
-      LEFT JOIN information_schema.columns i ON t.typname = i.udt_name
+      LEFT JOIN INFORMATION_SCHEMA.columns i ON t.typname = i.udt_name
       WHERE i.column_name = :columnName OR t.typname = :columnName
       GROUP BY i.udt_name;
     `;
@@ -41,8 +45,8 @@ function ColumnTypeGetter(databaseConnection, schema, allowWarning = true) {
           JOIN pg_catalog.pg_enum en
           ON t.oid = en.enumtypid
           WHERE t.typname = e.udt_name) AS "special"
-      FROM information_schema.columns c
-      LEFT JOIN information_schema.element_types e
+      FROM INFORMATION_SCHEMA.columns c
+      LEFT JOIN INFORMATION_SCHEMA.element_types e
       ON ((c.table_catalog, c.table_schema, c.table_name, 'TABLE', c.dtd_identifier) = (e.object_catalog, e.object_schema, e.object_name, e.object_type, e.collection_type_identifier))
       WHERE table_schema = :schema
         AND table_name = :table AND c.column_name = :columnName
@@ -74,9 +78,10 @@ function ColumnTypeGetter(databaseConnection, schema, allowWarning = true) {
 
   this.perform = async (columnInfo, columnName, tableName) => {
     const { type } = columnInfo;
-    const mysqlEnumRegex = /ENUM\((.*)\)/i;
 
     switch (type) {
+      case 'JSON':
+        return 'JSON';
       case (type === 'BIT(1)' && isDialect(DIALECT_MYSQL) && 'BIT(1)'): // NOTICE: MySQL boolean type.
       case 'BIT': // NOTICE: MSSQL type.
       case 'BOOLEAN':
@@ -84,15 +89,14 @@ function ColumnTypeGetter(databaseConnection, schema, allowWarning = true) {
       case 'CHARACTER VARYING':
       case 'TEXT':
       case 'NTEXT': // MSSQL type
-      case (type.match(/TEXT.*/i) || {}).input:
-      case (type.match(/VARCHAR.*/i) || {}).input:
-      case (type.match(/CHAR.*/i) || {}).input:
+      case typeContains(type, 'TEXT'):
+      case typeContains(type, 'VARCHAR'):
+      case typeContains(type, 'CHAR'):
       case 'NVARCHAR': // NOTICE: MSSQL type.
         return 'STRING';
-      case 'USER-DEFINED': {
+      case 'USER-DEFINED':
         return getTypeForUserDefined(columnName, columnInfo);
-      }
-      case (type.match(mysqlEnumRegex) || {}).input:
+      case typeMatch(type, /ENUM\((.*)\)/i):
         return type;
       case 'UNIQUEIDENTIFIER':
       case 'UUID':
@@ -102,32 +106,31 @@ function ColumnTypeGetter(databaseConnection, schema, allowWarning = true) {
       case 'INTEGER':
       case 'SERIAL':
       case 'BIGSERIAL':
-      case (type.match(/^INT.*/i) || {}).input:
-      case (type.match(/^SMALLINT.*/i) || {}).input:
-      case (type.match(/^TINYINT.*/i) || {}).input:
+      case typeStartsWith(type, 'INT'):
+      case typeStartsWith(type, 'SMALLINT'):
+      case typeStartsWith(type, 'TINYINT'):
         return 'INTEGER';
-      case (type.match(/^BIGINT.*/i) || {}).input:
+      case typeStartsWith(type, 'BIGINT'):
         return 'BIGINT';
-      case (type.match(/FLOAT.*/i) || {}).input:
+      case typeContains(type, 'FLOAT'):
         return 'FLOAT';
       case 'NUMERIC':
       case 'DECIMAL':
       case 'REAL':
       case 'DOUBLE':
       case 'DOUBLE PRECISION':
-      case (type.match(/DECIMAL.*/i) || {}).input:
+      case typeContains(type, 'DECIMAL'):
       case 'MONEY': // MSSQL type
         return 'DOUBLE';
       case 'DATE':
       case 'DATETIME':
-      case (type.match(/^TIMESTAMP.*/i) || {}).input:
+      case typeStartsWith(type, 'TIMESTAMP'):
         return 'DATE';
       case 'TIME':
       case 'TIME WITHOUT TIME ZONE':
         return 'TIME';
-      case 'ARRAY': {
+      case 'ARRAY':
         return this.getTypeForArray(tableName, columnName);
-      }
       case 'INET':
         return 'INET';
       default:
