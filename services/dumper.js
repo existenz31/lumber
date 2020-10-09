@@ -1,31 +1,19 @@
 const P = require('bluebird');
 const fs = require('fs');
-const os = require('os');
 const _ = require('lodash');
 const mkdirpSync = require('mkdirp');
 const Handlebars = require('handlebars');
 const chalk = require('chalk');
 const { plural, singular } = require('pluralize');
-const Sequelize = require('sequelize');
 const stringUtils = require('../utils/strings');
 const logger = require('./logger');
 const toValidPackageName = require('../utils/to-valid-package-name');
+const { tableToFilename } = require('../utils/dumper-utils');
 require('../handlerbars/loader');
 
 const mkdirp = P.promisify(mkdirpSync);
 
 const DEFAULT_PORT = 3310;
-
-const DEFAULT_VALUE_TYPES_TO_STRINGIFY = [
-  `${Sequelize.DataTypes.ARRAY}`,
-  `${Sequelize.DataTypes.CITEXT}`,
-  `${Sequelize.DataTypes.DATE}`,
-  `${Sequelize.DataTypes.ENUM}`,
-  `${Sequelize.DataTypes.JSONB}`,
-  `${Sequelize.DataTypes.STRING}`,
-  `${Sequelize.DataTypes.TEXT}`,
-  `${Sequelize.DataTypes.UUID}`,
-];
 
 function Dumper(config) {
   const path = `${process.cwd()}/${config.appName}`;
@@ -36,13 +24,9 @@ function Dumper(config) {
   const modelsPath = `${path}/models`;
   const middlewaresPath = `${path}/middlewares`;
 
-  function isLinuxBasedOs() {
-    return os.platform() === 'linux';
-  }
-
-  function writeFile(filePath, content) {
+  function writeFile(filePath, content, type = 'create') {
     fs.writeFileSync(filePath, content);
-    logger.log(`  ${chalk.green('create')} ${filePath.substring(path.length + 1)}`);
+    logger.log(`  ${chalk.green(type)} ${filePath.substring(path.length + 1)}`);
   }
 
   function copyTemplate(from, to) {
@@ -50,14 +34,13 @@ function Dumper(config) {
     writeFile(to, fs.readFileSync(newFrom, 'utf-8'));
   }
 
-  function copyHandleBarsTemplate({ source, target, context }) {
-    function handlebarsTemplate(templatePath) {
-      return Handlebars.compile(
-        fs.readFileSync(`${__dirname}/../templates/${templatePath}`, 'utf-8'),
-        { noEscape: true },
-      );
-    }
+  function handlebarsTemplate(templatePath) {
+    return Handlebars.compile(
+      fs.readFileSync(`${__dirname}/../templates/${templatePath}`, 'utf-8'),
+    );
+  }
 
+  function copyHandleBarsTemplate({ source, target, context }) {
     if (!(source && target && context)) {
       throw new Error('Missing argument (source, target or context).');
     }
@@ -65,10 +48,13 @@ function Dumper(config) {
     writeFile(`${path}/${target}`, handlebarsTemplate(source)(context));
   }
 
+  function getTableFileName(table) {
+    return `${path}/models/${tableToFilename(table)}.js`;
+  }
+
   function writePackageJson() {
     const orm = config.dbDialect === 'mongodb' ? 'mongoose' : 'sequelize';
     const dependencies = {
-      'body-parser': '1.19.0',
       chalk: '~1.1.3',
       'cookie-parser': '1.4.4',
       cors: '2.8.5',
@@ -76,8 +62,7 @@ function Dumper(config) {
       dotenv: '~6.1.0',
       express: '~4.16.3',
       'express-jwt': '5.3.1',
-      'forest-express': '^7.4.0',
-      [`forest-express-${orm}`]: '^6.0.0',
+      [`forest-express-${orm}`]: '^5.5.0',
       morgan: '1.9.1',
       'require-all': '^3.0.0',
       sequelize: '~5.15.1',
@@ -85,7 +70,7 @@ function Dumper(config) {
 
     if (config.dbDialect) {
       if (config.dbDialect.includes('postgres')) {
-        dependencies.pg = '~8.2.2';
+        dependencies.pg = '~6.1.0';
       } else if (config.dbDialect === 'mysql') {
         dependencies.mysql2 = '~1.7.0';
       } else if (config.dbDialect === 'mssql') {
@@ -105,10 +90,6 @@ function Dumper(config) {
     };
 
     writeFile(`${path}/package.json`, `${JSON.stringify(pkg, null, 2)}\n`);
-  }
-
-  function tableToFilename(table) {
-    return _.kebabCase(table);
   }
 
   function getDatabaseUrl() {
@@ -137,11 +118,6 @@ function Dumper(config) {
     return connectionString;
   }
 
-  function isDatabaseLocal() {
-    const databaseUrl = getDatabaseUrl();
-    return databaseUrl.includes('127.0.0.1') || databaseUrl.includes('localhost');
-  }
-
   function writeDotEnv() {
     copyHandleBarsTemplate({
       source: 'app/env.hbs',
@@ -162,26 +138,20 @@ function Dumper(config) {
     return stringUtils.camelCase(stringUtils.transformToSafeString(table));
   }
 
-  function getSafeDefaultValue(field) {
-    // NOTICE: in case of SQL dialect, ensure default value is directly usable in template
-    //         as a JS value.
-    let safeDefaultValue = field.defaultValue;
-    if (config.dbDialect !== 'mongodb') {
-      if (typeof safeDefaultValue === 'object' && safeDefaultValue instanceof Sequelize.Utils.Literal) {
-        safeDefaultValue = `Sequelize.literal('${safeDefaultValue.val}')`;
-      } else if (!_.isNil(safeDefaultValue)) {
-        if (_.some(
-          DEFAULT_VALUE_TYPES_TO_STRINGIFY,
-          // NOTICE: Uses `startsWith` as composite types may vary (eg: `ARRAY(DataTypes.INTEGER)`)
-          (dataType) => _.startsWith(field.type, dataType),
-        )) {
-          safeDefaultValue = JSON.stringify(safeDefaultValue);
-        } else if (`${safeDefaultValue}`.toUpperCase() === 'NULL') {
-          safeDefaultValue = '"NULL"';
-        }
-      }
+  function getReferenceWithMetaData(reference, isTargetKeyColumnUnconventional) {
+    const isBelongsToMany = reference.association === 'belongsToMany';
+
+    if (reference.targetKey) {
+      return {
+        ...reference,
+        isBelongsToMany,
+        targetKeyColumnUnconventional: isTargetKeyColumnUnconventional(reference),
+      };
     }
-    return safeDefaultValue;
+    return {
+      ...reference,
+      isBelongsToMany,
+    };
   }
 
   function writeModel(table, fields, references, options = {}) {
@@ -191,23 +161,22 @@ function Dumper(config) {
       const expectedConventionalColumnName = underscored ? _.snakeCase(field.name) : field.name;
       const nameColumnUnconventional = field.nameColumn !== expectedConventionalColumnName
         || (underscored && /[1-9]/g.test(field.name));
-      const safeDefaultValue = getSafeDefaultValue(field);
 
       return {
         ...field,
         ref: field.ref && getModelNameFromTableName(field.ref),
         nameColumnUnconventional,
-        safeDefaultValue,
-        // NOTICE: needed to keep falsy default values in template
-        hasSafeDefaultValue: !_.isNil(safeDefaultValue),
       };
     });
 
-    const referencesDefinition = references.map((reference) => ({
-      ...reference,
-      isBelongsToMany: reference.association === 'belongsToMany',
-      targetKey: _.camelCase(reference.targetKey),
-    }));
+    const isTargetKeyColumnUnconventional = (reference) => {
+      const expectedConventionalTargetKeyName = underscored
+        ? _.snakeCase(reference.targetKey) : _.camelCase(reference.targetKey);
+      return reference.targetKey !== expectedConventionalTargetKeyName;
+    };
+
+    const referencesDefinition = references.map((reference) =>
+      getReferenceWithMetaData(reference, isTargetKeyColumnUnconventional));
 
     copyHandleBarsTemplate({
       source: `app/models/${config.dbDialect === 'mongodb' ? 'mongo' : 'sequelize'}-model.hbs`,
@@ -296,13 +265,12 @@ function Dumper(config) {
         containerName: _.snakeCase(config.appName),
         hostname: config.appHostname || 'http://localhost',
         port: config.appPort || DEFAULT_PORT,
-        databaseUrl: isLinuxBasedOs() ? getDatabaseUrl() : getDatabaseUrl().replace('localhost', 'host.docker.internal'),
+        databaseUrl: getDatabaseUrl().replace('localhost', 'host.docker.internal'),
         ssl: config.ssl || 'false',
         dbSchema: config.dbSchema,
         forestEnvSecret: config.forestEnvSecret,
         forestAuthSecret: config.forestAuthSecret,
         forestUrl: process.env.FOREST_URL,
-        network: (isLinuxBasedOs() && isDatabaseLocal()) ? 'host' : null,
       },
     });
   }
@@ -314,6 +282,127 @@ function Dumper(config) {
       context: { isMongoDB: config.dbDialect === 'mongodb' },
     });
   }
+
+  this.dumpFieldIntoModel = (tableName, field) => {
+    const newFieldText = handlebarsTemplate(`app/models/update/${config.dbDialect === 'mongodb' ? 'mongo' : 'sequelize'}-field.hbs`)({ field })
+      .trimRight();
+    const tableFileName = getTableFileName(tableName);
+
+    const currentContent = fs.readFileSync(tableFileName, 'utf-8');
+    // NOTICE: Detect the model declaration.
+    const regexp = config.dbDialect === 'mongodb'
+      ? /(mongoose.Schema\({)/
+      : /(sequelize.define\(\s*'.*',\s*{)/;
+
+    if (regexp.test(currentContent)) {
+      // NOTICE: Insert the field at the beginning of the fields declaration.
+      const newContent = currentContent.replace(regexp, `$1\n${newFieldText}`);
+      writeFile(tableFileName, newContent, 'update');
+    } else {
+      logger.warn(chalk.bold(`WARNING: Cannot add the field definition ${field.name} \
+automatically. Please, add it manually to the file '${tableFileName}':\n${newFieldText}`));
+    }
+  };
+
+  this.dumpReferenceIntoModel = (tableName, reference) => {
+    const tableFileName = getTableFileName(tableName);
+    const referenceWithMetaDatas = getReferenceWithMetaData(reference, () => true);
+
+    const currentContent = fs.readFileSync(tableFileName, 'utf-8');
+
+    // NOTICE: Find the name of the variable which store the current model.
+    //         For example: const MyModel = sequelize.define(...
+    //         would give you MyModel
+    const regexpModelVariableName = /\s(\w+)\s*=\s*sequelize\s*\.\s*define/;
+    let modelVariableName;
+    if (regexpModelVariableName.test(currentContent)) {
+      const matches = currentContent.match(regexpModelVariableName);
+      [, modelVariableName] = matches;
+    } else {
+      modelVariableName = stringUtils.pascalCase(stringUtils.transformToSafeString(tableName));
+    }
+
+    const newFieldText = handlebarsTemplate('app/models/update/sequelize-relationship.hbs')({
+      reference: referenceWithMetaDatas,
+      modelVariableName,
+    })
+      .trimRight();
+
+    const regexpAssociate = /(\.associate\s*=\s*(function)?\s*\(models\)\s*(=>)?\s*{)/;
+
+    if (regexpAssociate.test(currentContent)) {
+      // NOTICE: Insert the new relationship at the first position in the associate block.
+      const newContent = currentContent.replace(regexpAssociate, `$1\n${newFieldText}`);
+      writeFile(tableFileName, newContent, 'update');
+    } else {
+      logger.warn(chalk.bold(`WARNING: Cannot add the field definition ${reference.name} \
+automatically. Please, add it manually to the file '${tableFileName}':\n${newFieldText}`));
+    }
+  };
+
+  function writeRouteIfPossible(modelName) {
+    // HACK: If a table name is "sessions" the generated routes will conflict with Forest Admin
+    //       internal session creation route. As a workaround, we don't generate the route file.
+    // TODO: Remove the if condition, once the routes paths refactored to prevent such conflict.
+    if (modelName !== 'sessions') {
+      writeRoute(modelName);
+    }
+  }
+
+  this.removeReferenceFromModel = (tableName, foreignKeyName) => {
+    const tableFileName = getTableFileName(tableName);
+
+    const currentContent = fs.readFileSync(tableFileName, 'utf-8');
+    // NOTICE: Detect the model declaration.
+    const regexp = new RegExp(`\\s*\\w+\\s*\\.\\s*(belongsToMany|belongsTo|hasMany|hasOne)\\s*\\(\\s*models\\.\\w+,\\s*{\\s*[\\s\\w',:]*foreignKey:\\s*({[\\s\\w',:]*field:\\s*['"]${foreignKeyName}['"],?\\s*}|\\s*['"]${foreignKeyName}['"]),?[^}]*}\\);?`);
+
+    if (regexp.test(currentContent)) {
+      // NOTICE: Insert the field at the beginning of the fields declaration.
+      const newContent = currentContent.replace(regexp, '');
+      writeFile(tableFileName, newContent, 'update');
+    } else {
+      logger.warn(chalk.bold(`WARNING: Cannot remove the reference on ${foreignKeyName} \
+automatically. Please, remove it manually from the file '${tableFileName}'`));
+    }
+  };
+
+  this.removeFieldFromModel = (tableName, fieldName) => {
+    const tableFileName = getTableFileName(tableName);
+
+    const currentContent = fs.readFileSync(tableFileName, 'utf-8');
+    // NOTICE: Detect the model declaration.
+    const regexp = new RegExp(`\\s*['"]?${fieldName}['"]?:\\s*{\\s*[^}]*type:\\s*DataTypes..*[^}]*},?`);
+
+    if (regexp.test(currentContent)) {
+      // NOTICE: Insert the field at the beginning of the fields declaration.
+      const newContent = currentContent.replace(regexp, '');
+      writeFile(tableFileName, newContent, 'update');
+    } else {
+      logger.warn(chalk.bold(`WARNING: Cannot remove the field ${fieldName} \
+automatically. Please, remove it manually from the file '${tableFileName}'`));
+    }
+  };
+
+  this.removeModel = (tableName) => {
+    const collectionFilePath = `${path}/forest/${tableName}`;
+    const modelFilePath = `${path}/models/${tableName}`;
+    const routeFilePath = `${path}/routes/${tableName}`;
+
+    if (fs.existsSync(collectionFilePath)) {
+      fs.unlinkSync(collectionFilePath);
+    }
+    if (fs.existsSync(routeFilePath)) {
+      fs.unlinkSync(routeFilePath);
+    }
+    fs.unlinkSync(modelFilePath);
+  };
+
+  this.dumpModel = (tableName, tableSchema) => {
+    writeForestCollection(tableName);
+    const { fields, references, options } = tableSchema;
+    writeModel(tableName, fields, references, options);
+    writeRouteIfPossible(tableName);
+  };
 
   // NOTICE: Generate files in alphabetical order to ensure a nice generation console logs display.
   this.dump = async (schema) => {
@@ -350,12 +439,7 @@ function Dumper(config) {
     copyTemplate('public/favicon.png', `${path}/public/favicon.png`);
 
     modelNames.forEach((modelName) => {
-      // HACK: If a table name is "sessions" the generated routes will conflict with Forest Admin
-      //       internal session creation route. As a workaround, we don't generate the route file.
-      // TODO: Remove the if condition, once the routes paths refactored to prevent such conflict.
-      if (modelName !== 'sessions') {
-        writeRoute(modelName);
-      }
+      writeRouteIfPossible(modelName);
     });
 
     copyTemplate('views/index.hbs', `${path}/views/index.html`);
