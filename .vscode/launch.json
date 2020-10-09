@@ -1,0 +1,70 @@
+// Use IntelliSense to learn about possible attributes.
+// Hover to view descriptions of existing attributes.
+// For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+{
+    "version": "0.2.0",
+"configurations": [
+{
+    // "env": {
+    //     "NODE_ENV": "development",
+    //     "APPLICATION_PORT":"3310",
+    //     "DATABASE_URL": "postgres://forest:forest2020@localhost:5432/forest_live_demo",
+    //     "DATABASE_SSL": false,
+    //     "DATABASE_SCHEMA": "public",
+    //     "EMAIL": "sebastienp@forestadmin.com"
+    // },
+    "type": "node",
+    "request": "launch",
+    "name": "Launch Program",
+    "skipFiles": [
+        "<node_internals>/**"
+    ],
+    "program": "${workspaceFolder}/lumber.js",
+    "args": [
+//        "generate", "draft2", 
+        "generate", "-h", 
+//        "--email", "sebastienp@forestadmin.com", 
+//        "--schema", "",
+//                "--connection-url", "postgres://forest:forest2020@localhost:5432/forest_live_demo",
+//                "--connection-url", "mongodb://heroku_ktrhs91p:q42lb4ipulfqkd3sgnusl5aege@ds047474.mlab.com:47474/heroku_ktrhs91p?authSource=heroku_ktrhs91p",
+//        "--connection-url", "mysql://root:root2020@localhost:3306/gbh",
+//        "--ssl", "false",
+//        "--application-host", "localhost",
+//        "--application-port", "3310"
+
+    ],
+    }
+    ]
+}
+// {
+//     // Use IntelliSense to learn about possible attributes.
+//     // Hover to view descriptions of existing attributes.
+//     // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+//     "version": "0.2.0",
+//     "configurations": [
+//       {
+//         "console": "integratedTerminal",
+//         "internalConsoleOptions": "neverOpen",
+//         "name": "nodemon",
+//         "program": "${workspaceFolder}/lumber.js",
+//         // "args":["generate \"draft2\" -e \"sebastienp@forestadmin.com\" --connection-url \"postgres://forest:forest2020@localhost:5432/forest_live_demo\" -S false -s \"public\" -H \"localhost\" -p \"3310\""],
+//         "request": "launch",
+//         "restart": true,
+//         "runtimeExecutable": "nodemon",
+//         "args": [
+//             "generate", "draft2", 
+//             "--email", "sebastienp@forestadmin.com", 
+//             "--schema", "public",
+//             "--connection-url", "postgres://forest:forest2020@localhost:5432/forest_live_demo",
+//             "--ssl", "false",
+//             "--application-host", "localhost",
+//             "--application-port", "3310"
+
+//         ],
+//         "skipFiles": [
+//           "<node_internals>/**"
+//         ],
+//         "type": "node"
+//       }
+//     ]
+//   }
